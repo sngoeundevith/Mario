@@ -69,6 +69,18 @@
   .box{background:#fff;border-radius:12px;padding:8px 4px;border:2px solid #e6dcc3}
   .box b{display:block;font-size:1.5rem;color:var(--navy)}
   @media (max-width:480px){.grid{grid-template-columns:repeat(2,1fr)}}
+  .board{margin-top:20px;background:#fff;border:2px solid var(--gold);border-radius:14px;padding:8px 10px}
+  .board h3{font-size:1rem;color:var(--navy);margin-bottom:4px}
+  .board ol{list-style:none}
+  .board .status{font-size:.8rem;color:#666;margin-top:4px}
+  .board li{display:flex;align-items:center;gap:8px;padding:6px 2px;border-top:1px solid #eee3c8;text-align:left}
+  .board .medal{font-size:1.4rem}
+  .board .who{flex:1;min-width:0;font-weight:700;overflow-wrap:anywhere}
+  .board .who small{display:block;font-weight:400;font-size:.8rem;color:#666}
+  .board .pts{font-weight:700;color:var(--navy);white-space:nowrap}
+  #tierBox{background:#fff;border-radius:12px;padding:8px;border:2px solid #e6dcc3}
+  #tierTitle{color:var(--navy)}
+  #tierNext{font-size:.9rem}
   #certPreview{width:100%;height:auto;border-radius:6px;border:1px solid #c9bd9c;margin-top:8px;background:#fff}
   details{margin-top:12px;text-align:left}
   summary{cursor:pointer;font-weight:700;color:var(--navy)}
@@ -104,7 +116,7 @@
     <h1 data-game></h1>
     <div>ប្រមាណវិធីលើចំនួនគត់រ៉ឺឡាទីប</div>
     <div class="field">
-      <input id="nameInput" maxlength="40" placeholder="ត្រកូល និងនាមខ្លួន (ឧ. សុខ ដារ៉ា)" autocomplete="name">
+      <input id="nameInput" maxlength="40" placeholder="ត្រកូល និងនាមខ្លួន (ឧ. ស្ងឿន ដេវីត)" autocomplete="name">
       <input id="classInput" maxlength="12" placeholder="ថ្នាក់ទី (ឧ. 7ក)">
     </div>
     <div class="label">កម្រិត</div>
@@ -127,7 +139,7 @@
     </ul>
     <div id="error" role="alert"></div>
     <button class="big" id="startBtn">▶ ចាប់ផ្ដើមលេង</button>
-    <div id="best"></div>
+    <div class="board" data-board></div>
   </div>
 </div>
 
@@ -151,11 +163,13 @@
       <div class="box">ភាគរយ<b id="rPercent"></b></div>
       <div class="box">ពិន្ទុ<b id="rScore"></b></div>
     </div>
+    <div id="tierBox"><b id="tierTitle"></b><div id="tierNext"></div></div>
     <canvas id="certPreview" width="2000" height="1414" aria-label="លិខិតបញ្ជាក់"></canvas>
     <div class="note" id="certNote"></div>
     <button class="big" id="downloadBtn">⬇ ទាញយកលិខិតបញ្ជាក់</button>
     <button class="big alt" id="replayBtn">↻ លេងម្ដងទៀត</button>
     <button class="big alt" id="homeBtn">ប្ដូរឈ្មោះ ឬកម្រិត</button>
+    <div class="board" data-board></div>
     <details id="reviewBox"><summary>មើលលំហាត់ដែលឆ្លើយខុស</summary><ol id="review"></ol></details>
   </div>
 </div>
@@ -167,6 +181,11 @@
 const SCHOOL_NAME = 'វិទ្យាល័យ សម្ដេចក្រឡាហោម ស ខេង តាគ្រាម';
 const GAME_NAME   = 'អ្នកផ្សងព្រេងចំនួនគត់';
 const LOGO_FILES  = ['logo.png', 'logo.jpg', 'logo.jpeg', 'logo.webp', 'Logo.png'];
+
+/* ដាក់ URL របស់ Firebase Realtime Database នៅចន្លោះសញ្ញា ' ' ខាងក្រោម ឧទាហរណ៍៖
+   'https://my-game-default-rtdb.asia-southeast1.firebasedatabase.app'
+   បើទុកទទេ តារាងចំណាត់ថ្នាក់នឹងរក្សាទុកតែលើឧបករណ៍នីមួយៗ */
+const FIREBASE_URL = '';
 
 const LEVELS = {
   easy:   { label: 'ងាយ',   time: 14, add: 10, mul: 5  },
@@ -849,15 +868,20 @@ function loadLogo(i = 0) {
   img.src = LOGO_FILES[i];
 }
 
-function gradeOf(percent, total) {
-  if (!total) return '—';
-  if (percent >= 90) return 'ល្អប្រសើរ';
-  if (percent >= 80) return 'ល្អណាស់';
-  if (percent >= 70) return 'ល្អ';
-  if (percent >= 60) return 'ល្អបង្គួរ';
-  if (percent >= 50) return 'មធ្យម';
-  return 'ត្រូវខិតខំបន្ថែម';
-}
+/* ប្រភេទលិខិតបញ្ជាក់ តាមចំនួនសំណួរដែលឆ្លើយត្រូវ
+   min = ចំនួនតិចបំផុត ; main = ពណ៌ស៊ុម ; accent = ពណ៌លម្អ ; ink = ពណ៌ចំណងជើង ; paper = ពណ៌ផ្ទៃ */
+const TIERS = [
+  { min: 0,   rank: 'អ្នកចាប់ផ្ដើម',   title: 'លិខិតបញ្ជាក់ការចូលរួម',            msg: 'ការចាប់ផ្ដើមល្អ! សូមព្យាយាមម្ដងទៀត',        main: '#41698f', accent: '#8fb2d1', ink: '#2f5576', paper: '#fbfdff' },
+  { min: 10,  rank: 'អ្នកព្យាយាម',     title: 'លិខិតលើកទឹកចិត្ត',                  msg: 'ខិតខំបានល្អ! សូមបន្តហ្វឹកហាត់ទៀត',           main: '#1f7a4d', accent: '#74bd93', ink: '#17663f', paper: '#fbfffc' },
+  { min: 30,  rank: 'អ្នកពូកែ',        title: 'លិខិតកោតសរសើរ',                    msg: 'ពូកែណាស់! អ្នកកំពុងរីកចម្រើន',                main: '#0f6670', accent: '#d0a23a', ink: '#0f6670', paper: '#fdfffb' },
+  { min: 50,  rank: 'កម្រិតសំរិទ្ធ',     title: 'លិខិតសរសើរថ្នាក់សំរិទ្ធ',            msg: 'ល្អណាស់! ជំនាញគណនារបស់អ្នករឹងមាំ',           main: '#5e361d', accent: '#c27a3e', ink: '#96551f', paper: '#fffaf4' },
+  { min: 100, rank: 'កម្រិតប្រាក់',      title: 'លិខិតសរសើរថ្នាក់ប្រាក់',               msg: 'ល្អប្រសើរ! អ្នកគណនាបានស្ទាត់ជំនាញ',      main: '#3d495c', accent: '#9aa6b8', ink: '#4a5870', paper: '#fcfdff' },
+  { min: 200, rank: 'កម្រិតមាស',       title: 'លិខិតសរសើរថ្នាក់មាស',                msg: 'អស្ចារ្យ! អ្នកមានសមត្ថភាពលេចធ្លោ',            main: '#14325c', accent: '#c9941f', ink: '#b07d0e', paper: '#fffcf2' },
+  { min: 300, rank: 'កម្រិតប្លាទីន',    title: 'លិខិតកិត្តិយសថ្នាក់ប្លាទីន',            msg: 'អស្ចារ្យណាស់! អ្នកផ្ចង់អារម្មណ៍បានល្អ', main: '#173f46', accent: '#63a9b0', ink: '#1d6a73', paper: '#f7fdfd' },
+  { min: 400, rank: 'កម្រិតពេជ្រ',       title: 'លិខិតកិត្តិយសថ្នាក់ពេជ្រ',              msg: 'ឆ្នើមបំផុត! អ្នកជិតដល់កំពូលហើយ',               main: '#2b2175', accent: '#3fb4e8', ink: '#3b2fa0', paper: '#f8faff' },
+  { min: 500, rank: 'កម្រិតកំពូល',      title: 'លិខិតកិត្តិយសកំពូលអ្នកគណិតវិទ្យា',     msg: 'សមិទ្ធផលដ៏កម្រ! អ្នកដល់កំពូលហើយ',     main: '#76101f', accent: '#d9a62e', ink: '#9a1428', paper: '#fffaf0' }
+];
+const tierIndex = correct => TIERS.reduce((best, t, i) => correct >= t.min ? i : best, 0);
 
 const toKh = n => String(n).replace(/\d/g, d => '០១២៣៤៥៦៧៨៩'[d]);
 function khmerDate(d) {
@@ -887,24 +911,52 @@ function contentBox(img) {
 }
 
 let result = null;
+function starPath(c, x, y, r) {
+  c.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + i * Math.PI / 5, d = i % 2 ? r * .45 : r;
+    c.lineTo(x + Math.cos(a) * d, y + Math.sin(a) * d);
+  }
+  c.closePath();
+}
+
 function drawCertificate() {
   const cv = $('certPreview'), c = cv.getContext('2d'), CW = cv.width, CH = cv.height;
   const body = "'Battambang','Khmer OS Battambang','Noto Sans Khmer','Khmer UI',sans-serif";
   const head = "'Moul','Khmer OS Muol Light','Noto Serif Khmer','Khmer UI',serif";
-  const text = (str, x, y, size, color, family = body, weight = 400, max = 1600) => {
+  const level = tierIndex(result.correct), tier = TIERS[level];
+  const text = (str, x, y, size, color, family = body, weight = 400, max = 1600, align = 'center') => {
     let s = size;
     do { c.font = `${weight} ${s}px ${family}`; s -= 2; } while (c.measureText(str).width > max && s > 18);
-    c.fillStyle = color; c.textAlign = 'center'; c.textBaseline = 'alphabetic'; c.fillText(str, x, y);
+    c.fillStyle = color; c.textAlign = align; c.textBaseline = 'alphabetic'; c.fillText(str, x, y);
+  };
+  const diamond = (x, y, size) => {
+    c.save(); c.translate(x, y); c.rotate(Math.PI / 4);
+    c.fillStyle = tier.accent; c.fillRect(-size, -size, size * 2, size * 2);
+    c.fillStyle = tier.main; c.fillRect(-size * .46, -size * .46, size * .92, size * .92); c.restore();
   };
 
-  c.fillStyle = '#fffcf2'; c.fillRect(0, 0, CW, CH);
-  c.strokeStyle = '#14325c'; c.lineWidth = 26; c.strokeRect(30, 30, CW - 60, CH - 60);
-  c.strokeStyle = '#c9941f'; c.lineWidth = 8; c.strokeRect(66, 66, CW - 132, CH - 132);
+  c.fillStyle = tier.paper; c.fillRect(0, 0, CW, CH);
+  if (level === 8) {                       // កាំរស្មីសម្រាប់កម្រិតកំពូល
+    c.save(); c.beginPath(); c.rect(84, 84, CW - 168, CH - 168); c.clip();
+    c.fillStyle = 'rgba(217,166,46,.09)';
+    for (let i = 0; i < 36; i += 2) {
+      const a = i * Math.PI / 18, b = a + Math.PI / 18;
+      c.beginPath(); c.moveTo(CW / 2, 500);
+      c.lineTo(CW / 2 + Math.cos(a) * 1600, 500 + Math.sin(a) * 1600);
+      c.lineTo(CW / 2 + Math.cos(b) * 1600, 500 + Math.sin(b) * 1600); c.fill();
+    }
+    c.restore();
+  }
+  c.strokeStyle = tier.main; c.lineWidth = 26; c.strokeRect(30, 30, CW - 60, CH - 60);
+  c.strokeStyle = tier.accent; c.lineWidth = 8; c.strokeRect(66, 66, CW - 132, CH - 132);
   c.lineWidth = 3; c.strokeRect(82, 82, CW - 164, CH - 164);
+  // លម្អជ្រុង៖ កាន់តែខ្ពស់ កាន់តែលម្អច្រើន
   [[82, 82], [CW - 82, 82], [82, CH - 82], [CW - 82, CH - 82]].forEach(([x, y]) => {
-    c.save(); c.translate(x, y); c.rotate(Math.PI / 4); c.fillStyle = '#c9941f'; c.fillRect(-26, -26, 52, 52);
-    c.fillStyle = '#14325c'; c.fillRect(-12, -12, 24, 24); c.restore();
+    if (level >= 3) diamond(x, y, level >= 6 ? 32 : 26);
+    else if (level >= 1) { c.beginPath(); c.arc(x, y, 22, 0, Math.PI * 2); c.fillStyle = tier.accent; c.fill(); c.beginPath(); c.arc(x, y, 9, 0, Math.PI * 2); c.fillStyle = tier.main; c.fill(); }
   });
+  if (level >= 6) [[CW / 2, 82], [CW / 2, CH - 82], [82, CH / 2], [CW - 82, CH / 2]].forEach(([x, y]) => diamond(x, y, 22));
 
   // ឡូហ្គោរង្វង់ ខាងលើឆ្វេង (គ្មានស៊ុមបន្ថែម)
   const lx = 270, ly = 265, lr = 130;
@@ -917,12 +969,17 @@ function drawCertificate() {
     c.restore();
   } else text('ឡូហ្គោសាលា', lx, ly + 14, 38, '#8a8f99', body, 400, 220);
 
-  text(SCHOOL_NAME, 1140, 288, 62, '#14325c', head, 400, 1360);
+  text(SCHOOL_NAME, CW / 2, 288, 62, '#14325c', head, 400, 1150);
 
-  text('លិខិតបញ្ជាក់', CW / 2, 525, 104, '#b07d0e', head);
-  c.fillStyle = '#c9941f'; c.fillRect(CW / 2 - 260, 575, 520, 5);
-  text('សូមបញ្ជាក់ថា សិស្សឈ្មោះ', CW / 2, 660, 46, '#333');
-  text(result.name, CW / 2, 775, 86, '#14325c', head, 400, 1500);
+  text(tier.title, CW / 2, 518, 100, tier.ink, head, 400, 1560);
+  // ផ្កាយ ៩ ៖ ចំនួនផ្កាយពណ៌ = កម្រិតដែលសម្រេចបាន
+  for (let i = 0; i < TIERS.length; i++) {
+    starPath(c, CW / 2 + (i - 4) * 58, 589, 22);
+    if (i <= level) { c.fillStyle = tier.accent; c.fill(); }
+    c.strokeStyle = tier.accent; c.lineWidth = 3; c.stroke();
+  }
+  text('សូមបញ្ជាក់ថា សិស្សឈ្មោះ', CW / 2, 668, 46, '#333');
+  text(result.name, CW / 2, 778, 86, tier.main, head, 400, 1500);
   text(`បានចូលរួមលេង Game «${GAME_NAME}» កម្រិត${result.levelLabel}`, CW / 2, 875, 46, '#333', body, 400, 1700);
   text('ដោយទទួលបានលទ្ធផលដូចខាងក្រោម៖', CW / 2, 945, 42, '#333');
 
@@ -930,14 +987,35 @@ function drawCertificate() {
     ['ចម្លើយត្រឹមត្រូវ', `${result.correct} / ${result.total}`],
     ['ភាគរយ', `${result.percent}%`],
     ['ពិន្ទុ', `${result.score}`],
-    ['និទ្ទេស', result.grade]
+    ['កម្រិតសមត្ថភាព', tier.rank]
   ].forEach(([label, value], i) => {
     const x = 185 + i * 415;
     c.fillStyle = '#fff'; rr(c, x, 975, 385, 175, 22); c.fill();
-    c.strokeStyle = '#14325c'; c.lineWidth = 3; c.stroke();
+    c.strokeStyle = tier.main; c.lineWidth = 3; c.stroke();
     text(label, x + 192, 1033, 38, '#555', body, 400, 350);
-    text(value, x + 192, 1115, 62, '#14325c', body, 700, 350);
+    text(value, x + 192, 1115, 62, tier.main, body, 700, 350);
   });
+
+  // មេដាយ នៅជ្រុងខាងលើស្ដាំ (ទល់មុខឡូហ្គោ)
+  c.save(); c.translate(CW - lx, 245); c.scale(1.6, 1.6);
+  [-1, 1].forEach(side => {
+    c.fillStyle = tier.main; c.beginPath();
+    c.moveTo(side * 8, 30); c.lineTo(side * 48, 30); c.lineTo(side * 62, 96);
+    c.lineTo(side * 40, 82); c.lineTo(side * 22, 98); c.closePath(); c.fill();
+  });
+  c.beginPath();
+  for (let i = 0; i < 48; i++) {
+    const a = i * Math.PI / 24, d = i % 2 ? 62 : 69;
+    c.lineTo(Math.cos(a) * d, Math.sin(a) * d);
+  }
+  c.closePath(); c.fillStyle = tier.accent; c.fill();
+  c.beginPath(); c.arc(0, 0, 49, 0, Math.PI * 2); c.fillStyle = tier.main; c.fill();
+  c.lineWidth = 4; c.strokeStyle = '#fff'; c.stroke();
+  starPath(c, 0, 2, 32); c.fillStyle = '#fff'; c.fill();
+  c.restore();
+
+  // ពាក្យលើកទឹកចិត្ត ខាងក្រោមឆ្វេង
+  text(tier.msg, 185, 1235, 40, tier.main, body, 700, 880, 'left');
 
   text(khmerDate(result.date), 1480, 1205, 38, '#333', body, 400, 700);
   text('គ្រូបង្រៀន', 1480, 1262, 40, '#14325c', head, 400, 500);
@@ -964,9 +1042,14 @@ function endGame() {
   result = {
     name: settings.name, klass: settings.klass, levelLabel: LEVELS[settings.level].label,
     correct: G.correct, wrong: G.wrong, total, percent, score: G.score,
-    grade: gradeOf(percent, total), date: new Date()
+    date: new Date()
   };
   $('resultName').textContent = settings.name;
+  const level = tierIndex(G.correct), next = TIERS[level + 1];
+  $('tierTitle').textContent = `🎖 ${TIERS[level].title}`;
+  $('tierNext').textContent = next
+    ? `ឆ្លើយត្រូវ ${next.min - G.correct} សំណួរទៀត ដើម្បីទទួលបាន «${next.title}»`
+    : 'អ្នកបានដល់កម្រិតខ្ពស់បំផុតហើយ!';
   $('rCorrect').textContent = `${G.correct}/${total}`;
   $('rWrong').textContent = G.wrong;
   $('rPercent').textContent = percent + '%';
@@ -984,11 +1067,8 @@ function endGame() {
   $('resultScreen').classList.add('show');
   $('resultScreen').scrollTop = 0;
   idlePanel('ចប់ការលេង');
-  try {
-    const best = Number(localStorage.getItem('integerRunnerBest') || 0);
-    if (G.score > best) localStorage.setItem('integerRunnerBest', G.score);
-  } catch (err) {}
-  showBest();
+  saveRecord(result);
+  showBoard();
   drawCertificate();
   ensureFonts().then(drawCertificate);
 }
@@ -1006,11 +1086,140 @@ function downloadCertificate() {
 }
 
 /* ===================== ការបញ្ជា ===================== */
-function showBest() {
+/* តារាងចំណាត់ថ្នាក់ខ្ពស់បំផុត ៖ ម្នាក់យកតែពិន្ទុល្អបំផុត
+   រក្សាទុកលើឧបករណ៍ជាមុន រួចផ្ញើទៅ Firebase (បើគ្មាន internet នឹងផ្ញើនៅពេលក្រោយ)
+   ទាំងលើឧបករណ៍ និងក្នុង Firebase រក្សាតែ ៣ នាក់ ៖ ពិន្ទុដែលធ្លាក់ចេញពី Top 3 ត្រូវលុបចោលដោយស្វ័យប្រវត្តិ */
+const TOP_KEY = 'integerRunnerTop';
+let topList = [];
+function loadTop() {
   try {
-    const b = localStorage.getItem('integerRunnerBest');
-    $('best').textContent = b ? `🏆 ពិន្ទុខ្ពស់បំផុតលើឧបករណ៍នេះ៖ ${b}` : '';
+    const saved = JSON.parse(localStorage.getItem(TOP_KEY) || '[]');
+    if (Array.isArray(saved)) topList = saved.filter(r => r && typeof r.name === 'string' && Number.isFinite(r.score));
   } catch (err) {}
+  return topList;
+}
+const sameText = t => String(t || '').replace(/[\s\u200B]+/g, '').toLowerCase();
+function saveRecord(r) {
+  if (r.score <= 0) return;
+  playedNow.push({ name: r.name, klass: r.klass, score: r.score, correct: r.correct, level: r.levelLabel });
+  const list = loadTop();
+  const i = list.findIndex(o => sameText(o.name) === sameText(r.name) && sameText(o.klass) === sameText(r.klass));
+  if (i >= 0) {
+    if (list[i].score >= r.score) return;
+    list.splice(i, 1);
+  }
+  list.push({ name: r.name, klass: r.klass, score: r.score, correct: r.correct, level: r.levelLabel, synced: false });
+  topList = list.sort((a, b) => b.score - a.score).slice(0, 3);
+  storeTop();
+}
+function storeTop() {
+  try { localStorage.setItem(TOP_KEY, JSON.stringify(topList)); } catch (err) {}
+}
+function renderBoard(rows, status) {
+  document.querySelectorAll('[data-board]').forEach(board => {
+    const el = (tag, cls, str) => { const e = document.createElement(tag); if (cls) e.className = cls; if (str !== undefined) e.textContent = str; return e; };
+    const list = el('ol');
+    ['🥇', '🥈', '🥉'].forEach((medal, i) => {
+      const r = rows[i], li = el('li'), who = el('span', 'who', r ? r.name : '—');
+      if (r) who.appendChild(el('small', '', [r.klass && `ថ្នាក់ ${r.klass}`, `ត្រូវ ${r.correct} សំណួរ`, r.level && `កម្រិត${r.level}`].filter(Boolean).join(' · ')));
+      li.append(el('span', 'medal', medal), who, el('span', 'pts', r ? `${r.score} ពិន្ទុ` : ''));
+      list.appendChild(li);
+    });
+    board.replaceChildren(el('h3', '', '🏆 ចំណាត់ថ្នាក់ខ្ពស់បំផុត ៣ នាក់'), list, el('div', 'status', status));
+  });
+}
+
+/* ---- Firebase Realtime Database (ប្រើតាម REST មិនចាំបាច់ដំឡើងអ្វីបន្ថែម) ---- */
+async function firebase(path, options = {}) {
+  const stop = new AbortController(), timer = setTimeout(() => stop.abort(), 8000);
+  try {
+    const res = await fetch(FIREBASE_URL.trim().replace(/\/+$/, '') + path, { cache: 'no-store', ...options, signal: stop.signal });
+    if (!res.ok) throw Object.assign(new Error('HTTP ' + res.status), { status: res.status });
+    return await res.json();
+  } finally { clearTimeout(timer); }
+}
+/* អ្នកលេងម្នាក់ = ឈ្មោះ + ថ្នាក់ */
+const playerKey = r => `${sameText(r.name)}__${sameText(r.klass)}`;
+/* Firebase មានតែប្រអប់ ៣ (top3/a, top3/b, top3/c) ដូច្នេះទិន្នន័យមិនកើនឡើងទេ
+   ពិន្ទុថ្មីដែលជាប់ Top 3 នឹងសរសេរជាន់លើពិន្ទុទាបជាងគេ */
+const SLOTS = ['a', 'b', 'c'];
+const validRecord = r => r && typeof r.name === 'string' && Number.isFinite(r.score);
+const readBoard = async () => (await firebase('/top3.json')) || {};
+
+function chooseSlot(board, r) {
+  const own = SLOTS.filter(s => validRecord(board[s]) && playerKey(board[s]) === playerKey(r))
+    .sort((x, y) => board[y].score - board[x].score)[0];
+  if (own) return r.score > board[own].score ? own : null;      // អ្នកលេងចាស់ ៖ ជំនួសតែពេលពិន្ទុខ្ពស់ជាងមុន
+  const empty = SLOTS.find(s => !board[s]);
+  if (empty) return empty;
+  const lowest = SLOTS.filter(s => validRecord(board[s])).sort((x, y) => board[x].score - board[y].score)[0];
+  return lowest && r.score > board[lowest].score ? lowest : null;   // មិនជាប់ Top 3 ៖ មិនរក្សាទុក
+}
+async function submitScore(r) {
+  for (let attempt = 1; ; attempt++) {
+    const slot = chooseSlot(await readBoard(), r);
+    if (!slot) return;
+    try {
+      await firebase(`/top3/${slot}.json`, { method: 'PUT', body: JSON.stringify({
+        name: r.name.slice(0, 40), klass: String(r.klass || '').slice(0, 12), level: r.level || '',
+        score: r.score, correct: r.correct, time: { '.sv': 'timestamp' }
+      }) });
+      return;
+    } catch (err) {       // អ្នកផ្សេងទើបសរសេរពិន្ទុខ្ពស់ជាងចូលប្រអប់នេះ ៖ អានម្ដងទៀត
+      if (err.status !== 401 || attempt >= 4) throw err;
+    }
+  }
+}
+
+const playedNow = [];   // ពិន្ទុក្នុងពេលបើកទំព័រនេះ ៖ ពិនិត្យឡើងវិញ ក្រែងបាត់ដោយសារអ្នកច្រើនផ្ញើព្រមគ្នា
+async function uploadPending() {
+  let problem = null;
+  const waiting = [...loadTop().filter(o => !o.synced), ...playedNow];
+  const done = new Set();
+  for (const r of waiting.sort((a, b) => b.score - a.score)) {
+    if (done.has(playerKey(r))) continue;
+    done.add(playerKey(r));
+    try {
+      await submitScore(r);
+      const same = loadTop().find(o => playerKey(o) === playerKey(r) && o.score === r.score);
+      if (same) { same.synced = true; storeTop(); }
+    } catch (err) { problem = err; }
+  }
+  return problem;
+}
+async function fetchTop() {
+  const seen = new Set();
+  return Object.values(await readBoard())
+    .filter(validRecord)
+    .sort((a, b) => b.score - a.score || a.time - b.time)
+    .filter(r => !seen.has(playerKey(r)) && seen.add(playerKey(r)))
+    .slice(0, 3);
+}
+function problemText(err) {
+  if (err.status === 401 || err.status === 403) return '⚠️ Firebase បដិសេធ៖ សូមពិនិត្យផ្ទាំង Rules';
+  if (err.status === 404) return '⚠️ រក database មិនឃើញ៖ សូមពិនិត្យ FIREBASE_URL';
+  return '⚠️ ភ្ជាប់ Firebase មិនបាន សូមពិនិត្យ internet';
+}
+
+let boardRun = 0, boardQueue = Promise.resolve(), onlineRows = null;
+function showBoard() {
+  if (!FIREBASE_URL.trim()) {
+    renderBoard(loadTop().slice(0, 3), '📱 ពិន្ទុលើឧបករណ៍នេះ (មិនទាន់ភ្ជាប់ Firebase)');
+    return;
+  }
+  const run = ++boardRun;
+  renderBoard(onlineRows || [], '⏳ កំពុងទាញចំណាត់ថ្នាក់…');
+  boardQueue = boardQueue.then(async () => {
+    try {
+      const problem = await uploadPending();
+      onlineRows = await fetchTop();
+      if (run === boardRun) renderBoard(onlineRows, problem
+        ? `${problemText(problem)} (ពិន្ទុខ្លះមិនទាន់បានផ្ញើ)`
+        : '🌐 ចំណាត់ថ្នាក់រួមពីគ្រប់ឧបករណ៍');
+    } catch (err) {
+      if (run === boardRun) renderBoard(loadTop().slice(0, 3), `${problemText(err)} · កំពុងបង្ហាញពិន្ទុលើឧបករណ៍នេះ`);
+    }
+  });
 }
 function pause() {
   if (G.mode !== 'play') return;
@@ -1047,6 +1256,7 @@ $('startBtn').addEventListener('click', () => {
 $('replayBtn').addEventListener('click', () => { startGame(); });
 $('homeBtn').addEventListener('click', () => {
   G = newGame(); updateHud(); idlePanel('ត្រៀមខ្លួន!');
+  showBoard();
   $('resultScreen').classList.remove('show'); $('startScreen').classList.add('show');
 });
 $('downloadBtn').addEventListener('click', downloadCertificate);
@@ -1066,6 +1276,7 @@ document.addEventListener('keydown', ev => {
     if (b) b.click();
   }
 });
+window.addEventListener('online', showBoard);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { pause(); if (audioCtx) audioCtx.suspend(); }    // ចេញពីផ្ទាំង game ៖ ផ្អាក និងបិទសំឡេង
   else initAudio();
@@ -1079,7 +1290,7 @@ try {
 } catch (err) {}
 $('nameInput').addEventListener('input', ev => showHeroName(ev.target.value));
 showHeroName($('nameInput').value);
-showBest();
+showBoard();
 loadLogo();
 new ResizeObserver(resize).observe($('stage'));
 requestAnimationFrame(loop);
