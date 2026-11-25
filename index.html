@@ -104,7 +104,7 @@
     <h1 data-game></h1>
     <div>ប្រមាណវិធីលើចំនួនគត់រ៉ឺឡាទីប</div>
     <div class="field">
-      <input id="nameInput" maxlength="40" placeholder="ឈ្មោះសិស្ស" autocomplete="name">
+      <input id="nameInput" maxlength="40" placeholder="ត្រកូល និងនាមខ្លួន (ឧ. សុខ ដារ៉ា)" autocomplete="name">
       <input id="classInput" maxlength="12" placeholder="ថ្នាក់ទី (ឧ. 7ក)">
     </div>
     <div class="label">កម្រិត</div>
@@ -121,8 +121,8 @@
       <button class="chip" data-op="÷" aria-pressed="true">÷</button>
     </div>
     <ul class="rules">
-      <li>វីរៈដើរទៅមុខជានិច្ច។ ពេលជួបឧបសគ្គ ចូរជ្រើសចម្លើយត្រឹមត្រូវមុនពេលវាទៅដល់ ដើម្បីលោតឆ្លង។</li>
-      <li>ឆ្លើយត្រូវពេលឃើញផ្សិតមាស នោះវីរៈលោតទៅយកថាមពល ធំជាងមុន ហើយប៉ះឧបសគ្គបានម្ដងដោយមិនស្លាប់។</li>
+      <li><b data-hero>អ្នក</b> ដើរទៅមុខជានិច្ច។ ពេលជួបឧបសគ្គ ចូរជ្រើសចម្លើយត្រឹមត្រូវមុនពេលវាទៅដល់ ដើម្បីលោតឆ្លង។</li>
+      <li>ឆ្លើយត្រូវពេលឃើញផ្សិតមាស នោះ <b data-hero>អ្នក</b> លោតទៅយកថាមពល ធំជាងមុន ហើយប៉ះឧបសគ្គបានម្ដងដោយមិនស្លាប់។</li>
       <li>មានជីវិតតែមួយប៉ុណ្ណោះ។ ចុចចម្លើយ ឬប្រើគ្រាប់ចុច 1–4។</li>
     </ul>
     <div id="error" role="alert"></div>
@@ -264,7 +264,7 @@ function makeQuestion(level, ops) {
 }
 
 /* ===================== សំឡេង ===================== */
-let audioCtx = null, muted = false;
+let audioCtx = null, musicGain = null, muted = false;
 function tone(freq, dur, type = 'square', delay = 0, slide = 0) {
   if (muted || !audioCtx) return;
   const t = audioCtx.currentTime + delay, o = audioCtx.createOscillator(), g = audioCtx.createGain();
@@ -273,6 +273,63 @@ function tone(freq, dur, type = 'square', delay = 0, slide = 0) {
   g.gain.setValueAtTime(.08, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
   o.connect(g).connect(audioCtx.destination); o.start(t); o.stop(t + dur);
 }
+/* បទភ្លេងផ្ទៃខាងក្រោយ (តែងថ្មីសម្រាប់ game នេះ) ៖ លេងវិលជុំមិនឈប់
+   លេខនីមួយៗជាណោត MIDI មួយចង្វាក់ខ្លី ; 0 = សម្រាក ; -1 = អូសណោតមុនបន្ត */
+const MELODY = [
+  76,79,81,79,76,-1,74,72,   74,76,79,-1,76,74,72,-1,
+  76,79,81,84,81,-1,79,76,   79,76,74,-1,74,-1,0,0,
+  81,0,81,79,76,79,81,-1,    84,81,79,-1,76,74,76,-1,
+  79,76,74,72,74,76,79,81,   79,-1,76,74,72,-1,0,0
+];
+const BASS = [48, 55, 57, 55, 53, 48, 55, 48];   // ណោតបាសមួយក្នុងមួយឃ្លា
+const BEAT = 60 / 132 / 2, MUSIC_VOL = .55;
+let musicStep = 0, musicTime = 0;
+
+function musicNote(midi, time, dur, type, vol) {
+  const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+  o.type = type; o.frequency.value = 440 * Math.pow(2, (midi - 69) / 12);
+  g.gain.setValueAtTime(0, time);
+  g.gain.linearRampToValueAtTime(vol, time + .015);
+  g.gain.setValueAtTime(vol, time + dur * .55);
+  g.gain.linearRampToValueAtTime(0, time + dur * .95);
+  o.connect(g).connect(musicGain); o.start(time); o.stop(time + dur);
+}
+function scheduleMusic() {
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  const now = audioCtx.currentTime;
+  if (musicTime < now) musicTime = now + .05;
+  while (musicTime < now + .35) {
+    const i = musicStep % MELODY.length, note = MELODY[i], inBar = i % 8;
+    if (note > 0) {
+      let len = 1;
+      while (MELODY[(i + len) % MELODY.length] === -1) len++;
+      musicNote(note, musicTime, BEAT * len, 'triangle', .075);
+    }
+    if (inBar % 2 === 0) musicNote(BASS[Math.floor(i / 8)] + (inBar % 4 === 2 ? 7 : 0), musicTime, BEAT * 1.4, 'triangle', .055);
+    musicTime += BEAT; musicStep++;
+  }
+}
+/* កម្មវិធីរុករក (browser) អនុញ្ញាតឱ្យបញ្ចេញសំឡេង ក្រោយអ្នកលេងប៉ះអេក្រង់ ឬចុចគ្រាប់ចុចម្ដងសិន */
+function initAudio() {
+  try {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      musicGain = audioCtx.createGain(); musicGain.gain.value = MUSIC_VOL;
+      musicGain.connect(audioCtx.destination);
+      setInterval(scheduleMusic, 80);
+    }
+    if (!muted && !document.hidden && audioCtx.state !== 'running') audioCtx.resume().then(scheduleMusic).catch(() => {});
+  } catch (err) {}
+}
+/* បន្ថយបទភ្លេងមួយភ្លែត ដើម្បីឱ្យឮសំឡេងពិសេសច្បាស់ */
+function duckMusic(level, seconds) {
+  if (!musicGain) return;
+  const t = audioCtx.currentTime, g = musicGain.gain;
+  g.cancelScheduledValues(t);
+  g.setTargetAtTime(MUSIC_VOL * level, t, .03);
+  g.setTargetAtTime(MUSIC_VOL, t + seconds, .25);
+}
+
 const sfx = {
   right: () => { tone(660, .1); tone(990, .16, 'square', .09); },
   wrong: () => tone(220, .3, 'sawtooth', 0, 110),
@@ -293,6 +350,16 @@ const JUMP_TIME = .95, FAST = 250;
 let settings = { name: '', klass: '', level: 'easy', ops: ['+', '−', '×', '÷'] };
 let G = newGame();
 
+/* នាមខ្លួន = ផ្នែកខាងក្រោយនាមត្រកូល (បើវាយតែមួយពាក្យ យកពាក្យនោះ) */
+function givenName(full) {
+  const clean = full.replace(/^[\s\u200B]+|[\s\u200B]+$/g, '');
+  return clean.replace(/^[^\s\u200B]+[\s\u200B]+/, '');
+}
+const heroName = () => givenName(settings.name) || 'អ្នក';
+function showHeroName(full) {
+  document.querySelectorAll('[data-hero]').forEach(el => el.textContent = givenName(full) || 'អ្នក');
+}
+
 function newGame() {
   return {
     mode: 'menu', t: 0, scroll: 0, walk: 0, speed: 110, gap: 1.6,
@@ -308,7 +375,7 @@ function startGame() {
   G = newGame(); G.mode = 'play';
   G.shroomEvery = rand(2, 3);
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('show'));
-  idlePanel('ត្រៀមខ្លួន! វីរៈកំពុងដើរ…');
+  idlePanel(`ត្រៀមខ្លួន! ${heroName()} កំពុងដើរ…`);
   updateHud();
 }
 
@@ -435,6 +502,7 @@ function collide() {
   } else {
     G.mode = 'dying';
     G.dead = { t: 0, type: e.type };
+    duckMusic(.08, 1.7);
     sfx.die();
   }
 }
@@ -442,7 +510,7 @@ function collide() {
 function finishEncounter(keepFeedback = false) {
   G.ent = null;
   G.gap = keepFeedback ? 2.6 : 1.1;
-  if (!keepFeedback) idlePanel('វីរៈកំពុងដើរ…');
+  if (!keepFeedback) idlePanel(`${heroName()} កំពុងដើរ…`);
 }
 
 /* ===================== ចលនា ===================== */
@@ -494,7 +562,7 @@ function update(dt) {
       ground = e.moving ? e.speed * .6 : e.speed;
       if (e.d <= 0) {
         if (e.type === 'mushroom') {
-          G.power = true; sfx.power();
+          G.power = true; duckMusic(.3, .7); sfx.power();
           burst(heroX(), GROUND() - 220, '#ffd54a', 50);
           G.banner = { text: 'ទទួលបានថាមពល!', t: 1.8 };
           finishEncounter(); updateHud();
@@ -589,7 +657,7 @@ function drawBackground() {
   });
 }
 
-/* តួអង្គ «វីរៈ» ៖ សិស្សសាលាពាក់ក្រមា ស្ពាយកាតាប (x, y = ចំណុចជើង) */
+/* តួអង្គអ្នកលេង ៖ សិស្សសាលាពាក់ក្រមា ស្ពាយកាតាប (x, y = ចំណុចជើង) */
 function drawHero(x, y, s, phase, airborne) {
   ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
   const sw = airborne ? .75 : Math.sin(phase) * .6;
@@ -951,7 +1019,7 @@ $('startBtn').addEventListener('click', () => {
   if (!name) { $('error').textContent = 'សូមវាយឈ្មោះជាមុនសិន (ដើម្បីដាក់ក្នុងលិខិតបញ្ជាក់)'; $('nameInput').focus(); return; }
   $('error').textContent = '';
   settings.name = name; settings.klass = $('classInput').value.trim();
-  try { audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)(); audioCtx.resume(); } catch (err) {}
+  initAudio();
   try { localStorage.setItem('integerRunnerPlayer', JSON.stringify([name, settings.klass])); } catch (err) {}
   document.activeElement.blur();
   ensureFonts();
@@ -966,7 +1034,11 @@ $('downloadBtn').addEventListener('click', downloadCertificate);
 $('pauseBtn').addEventListener('click', pause);
 $('resumeBtn').addEventListener('click', resume);
 $('quitBtn').addEventListener('click', () => { if (G.mode === 'paused') endGame(); });
-$('soundBtn').addEventListener('click', () => { muted = !muted; $('soundBtn').textContent = muted ? '🔇' : '🔊'; });
+$('soundBtn').addEventListener('click', () => {
+  muted = !muted; $('soundBtn').textContent = muted ? '🔇' : '🔊';
+  if (muted) { if (audioCtx) audioCtx.suspend(); } else initAudio();
+});
+['pointerup', 'touchend', 'click', 'keydown'].forEach(type => document.addEventListener(type, initAudio, { passive: true }));
 document.addEventListener('keydown', ev => {
   if (ev.target.tagName === 'INPUT') { if (ev.key === 'Enter') $('startBtn').click(); return; }
   if (ev.key === 'Escape' || ev.key.toLowerCase() === 'p') { G.mode === 'paused' ? resume() : pause(); return; }
@@ -975,7 +1047,10 @@ document.addEventListener('keydown', ev => {
     if (b) b.click();
   }
 });
-document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { pause(); if (audioCtx) audioCtx.suspend(); }    // ចេញពីផ្ទាំង game ៖ ផ្អាក និងបិទសំឡេង
+  else initAudio();
+});
 
 document.querySelectorAll('[data-school]').forEach(el => el.textContent = SCHOOL_NAME);
 document.querySelectorAll('[data-game]').forEach(el => el.textContent = GAME_NAME);
@@ -983,6 +1058,8 @@ try {
   const saved = JSON.parse(localStorage.getItem('integerRunnerPlayer') || 'null');
   if (saved) { $('nameInput').value = saved[0]; $('classInput').value = saved[1]; }
 } catch (err) {}
+$('nameInput').addEventListener('input', ev => showHeroName(ev.target.value));
+showHeroName($('nameInput').value);
 showBest();
 loadLogo();
 new ResizeObserver(resize).observe($('stage'));
